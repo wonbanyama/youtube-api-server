@@ -12,53 +12,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"youtube-backend/server/channel"
+	"youtube-backend/server/config"
+	"youtube-backend/server/video"
 )
-
-const (
-	APIKey = "" // 여기에 본인의 API 키 입력
-)
-
-type YouTubeResponse struct {
-	Items []struct {
-		Snippet struct {
-			ChannelId string `json:"channelId"`
-			Title     string `json:"title"`
-		} `json:"snippet"`
-	} `json:"items"`
-}
-
-type ChannelResponse struct {
-	Items []struct {
-		ContentDetails struct {
-			RelatedPlaylists struct {
-				Uploads string `json:"uploads"`
-			} `json:"relatedPlaylists"`
-		} `json:"contentDetails"`
-	} `json:"items"`
-}
-
-type PlaylistResponse struct {
-	Items []struct {
-		Snippet struct {
-			Title       string    `json:"title"`
-			PublishedAt time.Time `json:"publishedAt"`
-			ResourceId  struct {
-				VideoId string `json:"videoId"`
-			} `json:"resourceId"`
-		} `json:"snippet"`
-	} `json:"items"`
-}
-
-type VideoItem struct {
-	ID          string
-	Title       string
-	PublishedAt time.Time
-}
-
-type VideoWithViews struct {
-	Item      VideoItem
-	ViewCount int
-}
 
 type VideoStatsResponse struct {
 	Items []struct {
@@ -80,7 +37,7 @@ func getVideoStats(videoIDs []string) {
 	params := url.Values{}
 	params.Set("part", "snippet,statistics")
 	params.Set("id", strings.Join(videoIDs, ","))
-	params.Set("key", APIKey)
+	params.Set("key", config.APIKey)
 
 	resp, err := http.Get(baseURL + "?" + params.Encode())
 	if err != nil {
@@ -104,7 +61,7 @@ func getUploadPlaylistID(channelID string) string {
 	params := url.Values{}
 	params.Set("part", "contentDetails")
 	params.Set("id", channelID)
-	params.Set("key", APIKey)
+	params.Set("key", config.APIKey)
 
 	resp, err := http.Get(baseURL + "?" + params.Encode())
 	if err != nil {
@@ -112,7 +69,7 @@ func getUploadPlaylistID(channelID string) string {
 	}
 	defer resp.Body.Close()
 
-	var result ChannelResponse
+	var result channel.BasicResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		log.Fatalf("채널 응답 디코딩 실패: %v", err)
 	}
@@ -130,7 +87,7 @@ func getVideoIDsFromPlaylist(playlistID string, max int) []string {
 	params.Set("part", "snippet")
 	params.Set("playlistId", playlistID)
 	params.Set("maxResults", fmt.Sprintf("%d", max))
-	params.Set("key", APIKey)
+	params.Set("key", config.APIKey)
 
 	resp, err := http.Get(baseURL + "?" + params.Encode())
 	if err != nil {
@@ -138,7 +95,7 @@ func getVideoIDsFromPlaylist(playlistID string, max int) []string {
 	}
 	defer resp.Body.Close()
 
-	var result PlaylistResponse
+	var result channel.PlaylistResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		log.Fatalf("영상 목록 디코딩 실패: %v", err)
 	}
@@ -151,13 +108,13 @@ func getVideoIDsFromPlaylist(playlistID string, max int) []string {
 }
 
 // 특정시간 내 영상만 추출
-func getRecentVideoIDsFromPlaylist(playlistID string, max int, hour int) []VideoItem {
+func getRecentVideoIDsFromPlaylist(playlistID string, max int, hour int) []video.Item {
 	baseURL := "https://www.googleapis.com/youtube/v3/playlistItems"
 	params := url.Values{}
 	params.Set("part", "snippet")
 	params.Set("playlistId", playlistID)
 	params.Set("maxResults", fmt.Sprintf("%d", max))
-	params.Set("key", APIKey)
+	params.Set("key", config.APIKey)
 
 	resp, err := http.Get(baseURL + "?" + params.Encode())
 	if err != nil {
@@ -165,16 +122,16 @@ func getRecentVideoIDsFromPlaylist(playlistID string, max int, hour int) []Video
 	}
 	defer resp.Body.Close()
 
-	var result PlaylistResponse
+	var result channel.PlaylistResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		log.Fatalf("영상 목록 디코딩 실패: %v", err)
 	}
 
-	var recentVideos []VideoItem
+	var recentVideos []video.Item
 	now := time.Now()
 	for _, item := range result.Items {
 		if now.Sub(item.Snippet.PublishedAt) <= time.Duration(hour)*time.Hour {
-			recentVideos = append(recentVideos, VideoItem{
+			recentVideos = append(recentVideos, video.Item{
 				ID:          item.Snippet.ResourceId.VideoId,
 				Title:       item.Snippet.Title,
 				PublishedAt: item.Snippet.PublishedAt,
@@ -185,7 +142,7 @@ func getRecentVideoIDsFromPlaylist(playlistID string, max int, hour int) []Video
 	return recentVideos
 }
 
-func getVideoStatsForRecent(videos []VideoItem) {
+func getVideoStatsForRecent(videos []video.Item) {
 	if len(videos) == 0 {
 		fmt.Println("📭 해당시간 내 영상이 없습니다.")
 		return
@@ -200,7 +157,7 @@ func getVideoStatsForRecent(videos []VideoItem) {
 	params := url.Values{}
 	params.Set("part", "snippet,statistics")
 	params.Set("id", strings.Join(ids, ","))
-	params.Set("key", APIKey)
+	params.Set("key", config.APIKey)
 
 	resp, err := http.Get(baseURL + "?" + params.Encode())
 	if err != nil {
@@ -215,14 +172,14 @@ func getVideoStatsForRecent(videos []VideoItem) {
 	loc, _ := time.LoadLocation("Asia/Seoul")
 
 	// 📦 조회수와 함께 묶기
-	var videosWithViews []VideoWithViews
+	var videosWithViews []video.WithViews
 	for _, item := range result.Items {
 		viewCount, err := strconv.Atoi(item.Statistics.ViewCount)
 		if err != nil {
 			viewCount = 0
 		}
-		videosWithViews = append(videosWithViews, VideoWithViews{
-			Item: VideoItem{
+		videosWithViews = append(videosWithViews, video.WithViews{
+			Item: video.Item{
 				ID:          item.Id,
 				Title:       item.Snippet.Title,
 				PublishedAt: item.Snippet.PublishedAt,
@@ -255,7 +212,7 @@ func FindChannelID(channelName string) string {
 	params.Set("part", "snippet")
 	params.Set("type", "channel")
 	params.Set("q", channelName)
-	params.Set("key", APIKey)
+	params.Set("key", config.APIKey)
 
 	resp, err := http.Get(baseURL + "?" + params.Encode())
 	if err != nil {
@@ -263,7 +220,7 @@ func FindChannelID(channelName string) string {
 	}
 	defer resp.Body.Close()
 
-	var result YouTubeResponse
+	var result channel.YouTubeResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		log.Fatalf("채널 검색 응답 디코딩 실패: %v", err)
 	}
