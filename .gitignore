@@ -1,0 +1,30 @@
+# Compiled Object files, Static and Dynamic libs (So, A, *.o, *.so)
+*.o
+*.a
+*.so
+
+# Executables
+*.out
+
+# Cache and Temporary files
+.cache/
+.tmp/
+
+# Binary dependencies (Golang)
+vendor/
+
+# IDE-specific files (e.g. IntelliJ IDEA, VSCode)
+.idea/
+.vscode/
+
+# Environment-specific files
+.env
+
+# Log files
+*.log
+
+# macOS specific files
+.DS_Store
+
+# Windows thumbnail files
+Thumbs.db
