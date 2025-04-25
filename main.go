@@ -1,5 +1,6 @@
 package main
 
+// 필요한 패키지 임포트
 import (
 	"bufio"
 	"encoding/json"
@@ -17,6 +18,7 @@ import (
 	"youtube-backend/server/video"
 )
 
+// VideoStatsResponse는 YouTube API로부터 받아오는 비디오 통계 정보를 담는 구조체입니다.
 type VideoStatsResponse struct {
 	Items []struct {
 		Id      string `json:"id"`
@@ -32,6 +34,7 @@ type VideoStatsResponse struct {
 	} `json:"items"`
 }
 
+// getVideoStats는 주어진 비디오 ID 목록에 대한 통계 정보를 가져와 출력합니다.
 func getVideoStats(videoIDs []string) {
 	baseURL := "https://www.googleapis.com/youtube/v3/videos"
 	params := url.Values{}
@@ -56,6 +59,7 @@ func getVideoStats(videoIDs []string) {
 	}
 }
 
+// getUploadPlaylistID는 채널 ID를 받아 해당 채널의 업로드 재생목록 ID를 반환합니다.
 func getUploadPlaylistID(channelID string) string {
 	baseURL := "https://www.googleapis.com/youtube/v3/channels"
 	params := url.Values{}
@@ -81,6 +85,7 @@ func getUploadPlaylistID(channelID string) string {
 	return ""
 }
 
+// getVideoIDsFromPlaylist는 재생목록 ID와 최대 개수를 받아 비디오 ID 목록을 반환합니다.
 func getVideoIDsFromPlaylist(playlistID string, max int) []string {
 	baseURL := "https://www.googleapis.com/youtube/v3/playlistItems"
 	params := url.Values{}
@@ -107,7 +112,8 @@ func getVideoIDsFromPlaylist(playlistID string, max int) []string {
 	return ids
 }
 
-// 특정시간 내 영상만 추출
+// getRecentVideoIDsFromPlaylist는 특정 시간 내의 영상만 추출하여 반환합니다.
+// hour 파라미터는 현재 시간으로부터 몇 시간 이내의 영상을 가져올지 지정합니다.
 func getRecentVideoIDsFromPlaylist(playlistID string, max int, hour int) []video.Item {
 	baseURL := "https://www.googleapis.com/youtube/v3/playlistItems"
 	params := url.Values{}
@@ -142,6 +148,7 @@ func getRecentVideoIDsFromPlaylist(playlistID string, max int, hour int) []video
 	return recentVideos
 }
 
+// getVideoStatsForRecent는 최근 업로드된 영상들의 통계 정보를 가져와 조회수 순으로 정렬하여 출력합니다.
 func getVideoStatsForRecent(videos []video.Item) {
 	if len(videos) == 0 {
 		fmt.Println("📭 해당시간 내 영상이 없습니다.")
@@ -200,12 +207,13 @@ func getVideoStatsForRecent(videos []video.Item) {
 		if i < len(rankEmojis) {
 			emoji = rankEmojis[i]
 		}
-		kstTime := v.Item.PublishedAt.In(loc)
-		fmt.Printf("%s %d위\n🆕 %s\n📅 %s\n👀 조회수: %d\n🔗 https://www.youtube.com/watch?v=%s\n\n",
-			emoji, i+1, v.Item.Title, kstTime.Format("2006-01-02 15:04"), v.ViewCount, v.Item.ID)
+		publishedTime := v.PublishedAt.In(loc).Format("2006-01-02 15:04:05")
+		fmt.Printf("%s %s\n   🔗 https://www.youtube.com/watch?v=%s\n   👀 조회수: %d\n   🕒 업로드: %s\n\n",
+			emoji, v.Title, v.ID, v.ViewCount, publishedTime)
 	}
 }
 
+// FindChannelID는 채널 이름으로 채널 ID를 검색하여 반환합니다.
 func FindChannelID(channelName string) string {
 	baseURL := "https://www.googleapis.com/youtube/v3/search"
 	params := url.Values{}
@@ -216,60 +224,41 @@ func FindChannelID(channelName string) string {
 
 	resp, err := http.Get(baseURL + "?" + params.Encode())
 	if err != nil {
-		log.Fatalf("채널 검색 요청 실패: %v", err)
+		log.Fatalf("채널 검색 실패: %v", err)
 	}
 	defer resp.Body.Close()
 
-	var result channel.YouTubeResponse
+	var result struct {
+		Items []struct {
+			Id struct {
+				ChannelId string `json:"channelId"`
+			} `json:"id"`
+		} `json:"items"`
+	}
+
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		log.Fatalf("채널 검색 응답 디코딩 실패: %v", err)
+		log.Fatalf("채널 검색 결과 디코딩 실패: %v", err)
 	}
 
 	if len(result.Items) > 0 {
-		return result.Items[0].Snippet.ChannelId
+		return result.Items[0].Id.ChannelId
 	}
-	log.Fatal("채널 정보를 찾을 수 없습니다.")
 	return ""
 }
 
+// main 함수는 프로그램의 진입점으로, 사용자 입력을 받아 YouTube 채널의 영상 정보를 분석합니다.
 func main() {
 	scanner := bufio.NewScanner(os.Stdin)
+	fmt.Print("채널 이름을 입력하세요: ")
+	scanner.Scan()
+	channelName := scanner.Text()
 
-	for {
-		fmt.Print("채널명을 입력하세요 (종료하려면 'exit'): ")
-		scanner.Scan()
-		channelName := scanner.Text()
-
-		if strings.ToLower(channelName) == "exit" {
-			break
-		}
-
-		fmt.Print("몇 개의 영상을 가져올까요?: ")
-		scanner.Scan()
-		countStr := scanner.Text()
-
-		videoCount, err := strconv.Atoi(countStr)
-		if err != nil {
-			fmt.Println("숫자로 입력해주세요.")
-			continue
-		}
-
-		fmt.Print("몇시간 이내의 영상을 가져올까요?: ")
-		scanner.Scan()
-		hourStr := scanner.Text()
-
-		hour, err := strconv.Atoi(hourStr)
-		if err != nil {
-			fmt.Println("숫자로 입력해주세요.")
-			continue
-		}
-
-		// 여기에 실제 로직 호출
-		channelID := FindChannelID(channelName)
-		playlistID := getUploadPlaylistID(channelID)
-		recentVideos := getRecentVideoIDsFromPlaylist(playlistID, videoCount, hour)
-		getVideoStatsForRecent(recentVideos)
-
-		fmt.Println("--- 완료 ---\n")
+	channelID := FindChannelID(channelName)
+	if channelID == "" {
+		log.Fatal("채널을 찾을 수 없습니다.")
 	}
+
+	playlistID := getUploadPlaylistID(channelID)
+	recentVideos := getRecentVideoIDsFromPlaylist(playlistID, 50, 24) // 최근 24시간
+	getVideoStatsForRecent(recentVideos)
 }
